@@ -1,6 +1,0 @@
-fastapi
-uvicorn
-py2neo
-requests
-beautifulsoup4
-pyyaml

@@ -1,227 +1,219 @@
 #!/bin/bash
 
-# 定义项目目录
+# 项目根目录
 PROJECT_NAME="KnowledgePlanet"
-VERSION="0.0.1"
+#mkdir -p $PROJECT_NAME
 
-echo "Initializing project: $PROJECT_NAME"
+# 创建主目录结构
+echo "Setting up main directories..."
+mkdir -p $PROJECT_NAME/{app/{routers,services,db},data/{industry,forum},tests}
 
-# 创建目录结构
-mkdir -p $PROJECT_NAME/{backend/app/{models,routes,services,utils},backend/tests,frontend/src/{components,pages,services},frontend/public,data/{raw,processed},docs}
+# 创建文件
+echo "Creating main files..."
 
-# 初始化 README
-cat > $PROJECT_NAME/README.md <<EOL
-# Knowledge Planet
-
-Knowledge Planet is an open-source knowledge graph tool designed for individuals and organizations.
-
-## Version
-Current version: $VERSION
-EOL
-
-# 初始化后端代码
-
-## backend/app/__init__.py
-cat > $PROJECT_NAME/backend/app/__init__.py <<EOL
+# 主文件
+cat > $PROJECT_NAME/app/main.py <<EOL
 from fastapi import FastAPI
+from app.db.base import Base
+from app.db.session import engine
+from app.routers import knowledge, user
 
 app = FastAPI()
 
-from .routes import knowledge, user, subscriptions
+Base.metadata.create_all(bind=engine)
 
 app.include_router(knowledge.router)
 app.include_router(user.router)
-app.include_router(subscriptions.router, prefix="/api")
 EOL
 
-## backend/app/main.py
-cat > $PROJECT_NAME/backend/app/main.py <<EOL
-from . import app
+cat > $PROJECT_NAME/app/models.py <<EOL
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from app.db.base import Base
+from datetime import datetime
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+class KnowledgePoint(Base):
+    __tablename__ = "knowledge_points"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    content = Column(Text)
+    tags = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    email = Column(String, unique=True, index=True)
+    password = Column(String)
 EOL
 
-## backend/app/routes/knowledge.py
-cat > $PROJECT_NAME/backend/app/routes/knowledge.py <<EOL
+cat > $PROJECT_NAME/app/schemas.py <<EOL
+from pydantic import BaseModel
+
+class KnowledgePointSchema(BaseModel):
+    title: str
+    content: str
+    tags: str
+
+class UserSchema(BaseModel):
+    username: str
+    email: str
+    password: str
+EOL
+
+cat > $PROJECT_NAME/app/crud.py <<EOL
+from sqlalchemy.orm import Session
+from app.models import KnowledgePoint, User
+
+def get_knowledge_points(db: Session):
+    return db.query(KnowledgePoint).all()
+
+def create_knowledge_point(db: Session, knowledge):
+    db_knowledge = KnowledgePoint(**knowledge.dict())
+    db.add(db_knowledge)
+    db.commit()
+    db.refresh(db_knowledge)
+    return db_knowledge
+
+def get_user_by_email(db: Session, email: str):
+    return db.query(User).filter(User.email == email).first()
+
+def create_user(db: Session, user):
+    db_user = User(**user.dict())
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+EOL
+
+# 服务模块
+cat > $PROJECT_NAME/app/services/scraper.py <<EOL
+import requests
+from bs4 import BeautifulSoup
+
+def scrape_forum_data(url: str):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    posts = soup.find_all('div', class_='post')
+    data = []
+    for post in posts:
+        content = post.get_text()
+        data.append(content)
+    return data
+EOL
+
+cat > $PROJECT_NAME/app/services/summarizer.py <<EOL
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+
+def categorize_knowledge(data):
+    vectorizer = TfidfVectorizer(stop_words='english')
+    X = vectorizer.fit_transform(data)
+    model = KMeans(n_clusters=5)
+    model.fit(X)
+    labels = model.labels_
+    return labels
+EOL
+
+cat > $PROJECT_NAME/app/services/notifier.py <<EOL
+def send_email_notification(user_email, subject, content):
+    # 模拟发送邮件的逻辑
+    print(f"Sending email to {user_email} with subject '{subject}'")
+EOL
+
+# 路由模块
+cat > $PROJECT_NAME/app/routers/knowledge.py <<EOL
 from fastapi import APIRouter
+from app.models import KnowledgePoint
+from app.schemas import KnowledgePointSchema
+from app.crud import get_knowledge_points, create_knowledge_point
 
 router = APIRouter()
 
-@router.get("/knowledge/{id}")
-async def get_knowledge_point(id: int):
-    return {"id": id, "name": "Sample Knowledge Point"}
+@router.post("/knowledge")
+def create_knowledge(knowledge: KnowledgePointSchema):
+    return create_knowledge_point(knowledge)
 
-@router.post("/knowledge/")
-async def add_knowledge_point(data: dict):
-    return {"status": "success", "data": data}
+@router.get("/knowledge")
+def read_knowledge():
+    return get_knowledge_points()
 EOL
 
-## backend/app/routes/user.py
-cat > $PROJECT_NAME/backend/app/routes/user.py <<EOL
+cat > $PROJECT_NAME/app/routers/user.py <<EOL
 from fastapi import APIRouter
+from app.models import User
+from app.schemas import UserSchema
+from app.crud import get_user_by_email, create_user
 
 router = APIRouter()
 
-@router.get("/users/{id}")
-async def get_user(id: int):
-    return {"id": id, "name": "Sample User"}
+@router.post("/register")
+def register(user: UserSchema):
+    return create_user(user)
+
+@router.post("/login")
+def login(user: UserSchema):
+    return get_user_by_email(user.email)
 EOL
 
-## backend/app/routes/subscriptions.py
-cat > $PROJECT_NAME/backend/app/routes/subscriptions.py <<EOL
-from fastapi import APIRouter, HTTPException
-from backend.app.services.subscription_config import SubscriptionConfig
+# 数据库模块
+cat > $PROJECT_NAME/app/db/base.py <<EOL
+from sqlalchemy.ext.declarative import declarative_base
 
-router = APIRouter()
-config = SubscriptionConfig()
-
-@router.get("/subscriptions")
-def get_all_subscriptions():
-    """获取所有订阅配置"""
-    return config.get_all()
-
-@router.get("/subscriptions/{name}")
-def get_subscription_by_name(name: str):
-    """根据名称获取订阅配置"""
-    subscription = config.get_by_name(name)
-    if not subscription:
-        raise HTTPException(status_code=404, detail="Subscription not found")
-    return subscription
-
-@router.post("/subscriptions")
-def update_subscriptions(new_config: dict):
-    """更新订阅配置"""
-    updated_config = config.update(new_config)
-    return {"status": "success", "updated_config": updated_config}
+Base = declarative_base()
 EOL
 
-## backend/app/services/subscription_config.py
-cat > $PROJECT_NAME/backend/app/services/subscription_config.py <<EOL
-import yaml
+cat > $PROJECT_NAME/app/db/session.py <<EOL
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-class SubscriptionConfig:
-    def __init__(self, config_path="data/subscriptions.yaml"):
-        self.config_path = config_path
-
-    def get_all(self):
-        with open(self.config_path, "r") as file:
-            return yaml.safe_load(file)
-
-    def get_by_name(self, name):
-        config = self.get_all()
-        for subscription in config.get("subscriptions", []):
-            if subscription["name"] == name:
-                return subscription
-        return None
-
-    def update(self, new_config):
-        with open(self.config_path, "w") as file:
-            yaml.dump(new_config, file)
-        return new_config
+DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 EOL
 
-## backend/requirements.txt
-cat > $PROJECT_NAME/backend/requirements.txt <<EOL
+cat > $PROJECT_NAME/app/config.py <<EOL
+class Settings:
+    GITHUB_TOKEN = "your_github_token"
+    DATABASE_URL = "sqlite:///./test.db"
+
+settings = Settings()
+EOL
+
+# 测试文件
+cat > $PROJECT_NAME/tests/test_scraper.py <<EOL
+def test_scrape_forum_data():
+    assert True  # Add actual test logic here
+EOL
+
+cat > $PROJECT_NAME/tests/test_knowledge.py <<EOL
+def test_create_knowledge():
+    assert True  # Add actual test logic here
+EOL
+
+# 其他文件
+cat > $PROJECT_NAME/requirements.txt <<EOL
 fastapi
-uvicorn
-py2neo
+sqlalchemy
+pydantic
 requests
 beautifulsoup4
-pyyaml
+scikit-learn
 EOL
 
-# 初始化前端代码
-
-## frontend/src/App.vue
-cat > $PROJECT_NAME/frontend/src/App.vue <<EOL
-<template>
-  <div>
-    <h1>Knowledge Planet</h1>
-  </div>
-</template>
-
-<script>
-export default {
-  name: "App"
-};
-</script>
-
-<style scoped>
-h1 {
-  font-family: Arial, sans-serif;
-}
-</style>
+cat > $PROJECT_NAME/Dockerfile <<EOL
+FROM python:3.9
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 EOL
 
-## frontend/package.json
-cat > $PROJECT_NAME/frontend/package.json <<EOL
-{
-  "name": "knowledge-planet-frontend",
-  "version": "$VERSION",
-  "description": "Frontend for Knowledge Planet",
-  "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build"
-  },
-  "dependencies": {
-    "vue": "^3.0.0"
-  },
-  "devDependencies": {
-    "@vue/cli-service": "^5.0.0"
-  }
-}
+cat > $PROJECT_NAME/README.md <<EOL
+# KnowledgePlanet
+An open-source knowledge graph tool for individuals and organizations.
 EOL
 
-# 初始化订阅配置
-cat > $PROJECT_NAME/data/subscriptions.yaml <<EOL
-subscriptions:
-  - name: github_project_updates
-    type: github
-    config:
-      repos:
-        - "owner/repo1"
-        - "owner/repo2"
-      events:
-        - "commits"
-        - "issues"
-        - "pull_requests"
-    schedule: "daily"
-
-  - name: ai_news_updates
-    type: news
-    config:
-      sources:
-        - "https://ai.googleblog.com/"
-        - "https://openai.com/blog/"
-        - "https://huggingface.co/blog"
-    keywords:
-      - "GPT"
-      - "large language models"
-      - "AI research"
-    schedule: "hourly"
-
-  - name: ai_job_market
-    type: job_market
-    config:
-      platforms:
-        - "https://www.lagou.com/"
-        - "https://www.51job.com/"
-      filters:
-        job_title_keywords:
-          - "AI开发"
-          - "大模型"
-        salary_range: [20000, 100000]
-        industries: ["IT", "金融", "医疗"]
-    schedule: "weekly"
-EOL
-
-# 初始化 Git 仓库
-cd $PROJECT_NAME
-git init
-git add .
-git commit -m "Initial commit, version $VERSION"
-git tag "$VERSION"
-
-echo "Project initialized and Git repository set up at version $VERSION."
+echo "Project setup complete in $PROJECT_NAME"
