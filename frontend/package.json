@@ -1,0 +1,15 @@
+{
+  "name": "knowledge-planet-frontend",
+  "version": "0.0.1",
+  "description": "Frontend for Knowledge Planet",
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build"
+  },
+  "dependencies": {
+    "vue": "^3.0.0"
+  },
+  "devDependencies": {
+    "@vue/cli-service": "^5.0.0"
+  }
+}

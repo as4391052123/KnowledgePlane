@@ -1,0 +1,39 @@
+subscriptions:
+  - name: github_project_updates
+    type: github
+    config:
+      repos:
+        - "owner/repo1"
+        - "owner/repo2"
+      events:
+        - "commits"
+        - "issues"
+        - "pull_requests"
+    schedule: "daily"
+
+  - name: ai_news_updates
+    type: news
+    config:
+      sources:
+        - "https://ai.googleblog.com/"
+        - "https://openai.com/blog/"
+        - "https://huggingface.co/blog"
+    keywords:
+      - "GPT"
+      - "large language models"
+      - "AI research"
+    schedule: "hourly"
+
+  - name: ai_job_market
+    type: job_market
+    config:
+      platforms:
+        - "https://www.lagou.com/"
+        - "https://www.51job.com/"
+      filters:
+        job_title_keywords:
+          - "AI开发"
+          - "大模型"
+        salary_range: [20000, 100000]
+        industries: ["IT", "金融", "医疗"]
+    schedule: "weekly"
